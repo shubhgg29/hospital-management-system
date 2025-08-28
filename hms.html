@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hospital Management - Demo (HTML)</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+e2H/b6y0v1kGk9bJv0QYQ3k6s6b1mYh2v+Z5b0mM=" crossorigin="" />
+  <style>
+    :root{--accent:#1976d2;--muted:#666}
+    body{font-family:Inter, system-ui, Arial, sans-serif;margin:0;background:#f6f8fb;color:#111}
+    header{background:linear-gradient(90deg,#0d47a1,#1976d2);color:#fff;padding:18px 24px;display:flex;align-items:center;justify-content:space-between}
+    header h1{font-size:18px;margin:0}
+    .container{max-width:1100px;margin:20px auto;padding:18px;background:#fff;border-radius:10px;box-shadow:0 6px 20px rgba(15,20,30,0.06)}
+    .grid{display:grid;gap:18px;grid-template-columns:360px 1fr}
+    .card{padding:14px;border-radius:8px;background:#fff;border:1px solid #f0f2f5}
+    .small{font-size:13px;color:var(--muted)}
+    label{display:block;margin:8px 0 6px;font-weight:600}
+    input[type=text],input[type=password],input[type=email],select,input[type=date],input[type=time]{width:100%;padding:8px;border-radius:6px;border:1px solid #e6e9ef}
+    button{background:var(--accent);color:#fff;padding:8px 12px;border:none;border-radius:6px;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(25,118,210,0.12)}
+    .role-tabs{display:flex;gap:6px;margin-bottom:12px}
+    .role-tabs button{flex:1}
+    #map{height:420px;border-radius:8px}
+    .list{max-height:220px;overflow:auto}
+    .item{padding:8px;border-bottom:1px solid #f1f3f6}
+    .muted{color:var(--muted)}
+    @media (max-width:900px){.grid{grid-template-columns:1fr;}.container{margin:12px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hospital Management — Demo</h1>
+    <div class="small">Local demo • Data stored in browser only</div>
+  </header>
+
+  <main class="container">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div class="role-tabs">
+            <button id="tab-consumer" class="ghost" onclick="openAuth('consumer')">Consumer</button>
+            <button id="tab-doctor" class="ghost" onclick="openAuth('doctor')">Doctor</button>
+            <button id="tab-hospital" class="ghost" onclick="openAuth('hospital')">Hospital</button>
+          </div>
+
+          <div id="auth-area">
+            <!-- Auth forms will be injected here -->
+          </div>
+
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <h3 style="margin:0 0 8px 0">Appointments</h3>
+          <div id="appt-area">
+            <div class="small muted">Log in as a consumer to book appointments.</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px;">
+          <h3 style="margin:0 0 8px 0">My Appointments</h3>
+          <div id="my-appts" class="list muted">No appointments yet.</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <h3 style="margin-top:0">Find Nearest Hospital</h3>
+          <p class="small">Click the button to use your browser location and see nearby hospitals on the map.</p>
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            <button onclick="locateUser()">Use my location</button>
+            <button class="ghost" onclick="showAllHospitals()">Show all sample hospitals</button>
+            <select id="radius" style="width:140px"><option value="5">Within 5 km</option><option value="10">Within 10 km</option><option value="25">Within 25 km</option><option value="100">Any</option></select>
+          </div>
+          <div id="map"></div>
+          <div style="margin-top:10px">
+            <strong>Nearest</strong>
+            <div id="nearest" class="muted">No location selected.</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <h3 style="margin-top:0">Doctors</h3>
+          <div id="doctors-list" class="list"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-o9N1j7kG3h3nJp7k2gq5x6Qqv4hY9o2yXqgkP0N4f6E=" crossorigin=""></script>
+
+  <script>
+    // ---------- Sample data (would come from server in real app) ----------
+    const sampleHospitals = [
+      {id:1,name:'City General Hospital',lat:28.6139,lng:77.2090,address:'Central Ave, City Center'},
+      {id:2,name:'Green Valley Clinic',lat:28.6200,lng:77.2000,address:'Green Rd, North'},
+      {id:3,name:'Sunrise Medical',lat:28.6050,lng:77.2200,address:'Sunrise St'},
+      {id:4,name:'Riverfront Hospital',lat:28.6000,lng:77.1800,address:'River Rd'},
+      {id:5,name:'Northside Healthcare',lat:28.6400,lng:77.2100,address:'Northside Plaza'}
+    ];
+
+    const sampleDoctors = [
+      {id:1,name:'Dr. Asha Patel',specialty:'General Physician',hospitalId:1},
+      {id:2,name:'Dr. Rohit Mehra',specialty:'Cardiologist',hospitalId:1},
+      {id:3,name:'Dr. Saira Khan',specialty:'Pediatrics',hospitalId:2},
+      {id:4,name:'Dr. Vivek Kumar',specialty:'Orthopedics',hospitalId:3}
+    ];
+
+    // ---------- Simple localStorage "backend" ----------
+    function getUsers(role){
+      return JSON.parse(localStorage.getItem('users_'+role) || '[]');
+    }
+    function saveUser(role,user){
+      const arr = getUsers(role);
+      arr.push(user);
+      localStorage.setItem('users_'+role, JSON.stringify(arr));
+    }
+    function findUser(role, email, pass){
+      return getUsers(role).find(u => u.email === email && u.password === pass);
+    }
+
+    // ---------- Auth UI ----------
+    let currentRole = 'consumer';
+    let currentUser = null; // {role, name, email,...}
+
+    function openAuth(role){
+      currentRole = role;
+      document.getElementById('tab-consumer').classList.toggle('ghost', role!=='consumer');
+      document.getElementById('tab-doctor').classList.toggle('ghost', role!=='doctor');
+      document.getElementById('tab-hospital').classList.toggle('ghost', role!=='hospital');
+
+      const area = document.getElementById('auth-area');
+      area.innerHTML = `
+        <div class="small muted">Role: <strong>${role}</strong></div>
+        <div style="margin-top:8px">
+          <button onclick="showLogin()">Login</button>
+          <button class="ghost" onclick="showSignup()">Sign up</button>
+        </div>
+      `;
+      showLogin();
+    }
+
+    function showSignup(){
+      const area = document.getElementById('auth-area');
+      area.innerHTML = `
+        <h3 style="margin:8px 0 6px 0">Sign up (${currentRole})</h3>
+        <label>Name</label><input id="su-name" type="text" />
+        <label>Email</label><input id="su-email" type="email" />
+        <label>Password</label><input id="su-pass" type="password" />
+        ${currentRole==='hospital'? '<label>Hospital Address</label><input id="su-address" type="text" />':''}
+        <div style="margin-top:10px"><button onclick="signup()">Create account</button></div>
+      `;
+    }
+    function showLogin(){
+      const area = document.getElementById('auth-area');
+      area.innerHTML = `
+        <h3 style="margin:8px 0 6px 0">Login (${currentRole})</h3>
+        <label>Email</label><input id="li-email" type="email" />
+        <label>Password</label><input id="li-pass" type="password" />
+        <div style="margin-top:10px"><button onclick="login()">Login</button></div>
+      `;
+    }
+
+    function signup(){
+      const name = document.getElementById('su-name').value.trim();
+      const email = document.getElementById('su-email').value.trim();
+      const pass = document.getElementById('su-pass').value;
+      if(!name || !email || !pass){alert('Please fill all fields');return}
+      const exists = getUsers(currentRole).some(u=>u.email===email);
+      if(exists){alert('An account with this email exists');return}
+      const user = {id:Date.now(),name,email,password:pass,role:currentRole,created:new Date().toISOString()};
+      if(currentRole==='hospital') user.address = document.getElementById('su-address').value||'';
+      saveUser(currentRole,user);
+      alert('Account created. You can now log in.');
+      showLogin();
+    }
+
+    function login(){
+      const email = document.getElementById('li-email').value.trim();
+      const pass = document.getElementById('li-pass').value;
+      const u = findUser(currentRole,email,pass);
+      if(!u){alert('Invalid credentials');return}
+      currentUser = {...u, role: currentRole};
+      localStorage.setItem('session', JSON.stringify(currentUser));
+      renderAfterLogin();
+    }
+
+    function logout(){
+      currentUser = null;localStorage.removeItem('session');
+      openAuth('consumer');
+      document.getElementById('appt-area').innerHTML = '<div class="small muted">Log in as a consumer to book appointments.</div>';
+      renderAppointments();
+    }
+
+    function renderAfterLogin(){
+      const authArea = document.getElementById('auth-area');
+      authArea.innerHTML = `
+        <div class="small">Signed in as <strong>${currentUser.name}</strong> (${currentUser.role})</div>
+        <div style="margin-top:10px">
+          <button onclick="logout()">Logout</button>
+        </div>
+      `;
+
+      if(currentUser.role==='consumer') renderAppointmentForm();
+      else document.getElementById('appt-area').innerHTML = '<div class="muted small">Appointments are available for consumers only.</div>';
+
+      renderAppointments();
+    }
+
+    // ---------- Appointments ----------
+    function renderAppointmentForm(){
+      const area = document.getElementById('appt-area');
+      const doctorOptions = sampleDoctors.map(d=>`<option value="${d.id}">${d.name} — ${d.specialty}</option>`).join('');
+      area.innerHTML = `
+        <h4 style="margin:6px 0">Book Appointment</h4>
+        <label>Doctor</label><select id="appt-doc">${doctorOptions}</select>
+        <label>Date</label><input id="appt-date" type="date" />
+        <label>Time</label><input id="appt-time" type="time" />
+        <div style="margin-top:8px"><button onclick="bookAppointment()">Book</button></div>
+      `;
+    }
+
+    function bookAppointment(){
+      const docId = parseInt(document.getElementById('appt-doc').value,10);
+      const date = document.getElementById('appt-date').value;
+      const time = document.getElementById('appt-time').value;
+      if(!date || !time){alert('Please pick date and time');return}
+      const appt = {id:Date.now(),userEmail:currentUser.email,doctorId:docId,date,time,created:new Date().toISOString()};
+      const arr = JSON.parse(localStorage.getItem('appointments')||'[]');
+      arr.push(appt);localStorage.setItem('appointments',JSON.stringify(arr));
+      alert('Appointment booked');
+      renderAppointments();
+    }
+
+    function renderAppointments(){
+      const my = JSON.parse(localStorage.getItem('appointments')||'[]').filter(a=> currentUser ? a.userEmail===currentUser.email : false);
+      const el = document.getElementById('my-appts');
+      if(!my.length){el.innerHTML = '<div class="muted small">No appointments yet.</div>' ; return}
+      el.innerHTML = my.map(a=>{
+        const d = sampleDoctors.find(x=>x.id===a.doctorId) || {name:'Unknown'};
+        return `<div class="item"><strong>${d.name}</strong> — ${a.date} ${a.time}<div class="small muted">Booked on ${new Date(a.created).toLocaleString()}</div></div>`
+      }).join('');
+    }
+
+    // ---------- Map & nearest ----------
+    let map, userMarker, hospitalLayer;
+    function initMap(){
+      map = L.map('map').setView([28.6139,77.2090], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+      hospitalLayer = L.layerGroup().addTo(map);
+      showAllHospitals();
+    }
+
+    function showAllHospitals(){
+      hospitalLayer.clearLayers();
+      sampleHospitals.forEach(h => {
+        const m = L.marker([h.lat,h.lng]).bindPopup(`<strong>${h.name}</strong><div class=\"small\">${h.address}</div>`);
+        hospitalLayer.addLayer(m);
+      });
+      map.fitBounds(hospitalLayer.getBounds(),{padding:[40,40]});
+      document.getElementById('nearest').innerText = 'Shown sample hospitals.';
+    }
+
+    function locateUser(){
+      if(!navigator.geolocation){alert('Geolocation not supported');return}
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        if(userMarker) map.removeLayer(userMarker);
+        userMarker = L.marker([lat,lng],{title:'You'}).addTo(map).bindPopup('You are here').openPopup();
+        map.setView([lat,lng],13);
+        findNearestHospital(lat,lng);
+      },err=>{alert('Could not get location: '+err.message)} );
+    }
+
+    function findNearestHospital(lat,lng){
+      const radKm = parseFloat(document.getElementById('radius').value);
+      let nearest=null; let minD=Infinity;
+      sampleHospitals.forEach(h=>{
+        const d = haversine(lat,lng,h.lat,h.lng);
+        if(d < minD && (radKm===100 || d<=radKm)) { minD=d; nearest=h; }
+      });
+      if(!nearest){document.getElementById('nearest').innerText = 'No hospitals found within the selected radius.'; return}
+      document.getElementById('nearest').innerHTML = `<strong>${nearest.name}</strong> — ${nearest.address} (${minD.toFixed(2)} km)`;
+      hospitalLayer.clearLayers();
+      // show nearest + nearby
+      const nearM = L.marker([nearest.lat,nearest.lng]).addTo(hospitalLayer).bindPopup(`<strong>${nearest.name}</strong>`).openPopup();
+      // show others too (close ones)
+      sampleHospitals.forEach(h=>L.circle([h.lat,h.lng],{radius:100,opacity:0.2}).addTo(hospitalLayer));
+      map.setView([nearest.lat,nearest.lng],13);
+    }
+
+    function haversine(lat1,lon1,lat2,lon2){
+      function toRad(x){return x*Math.PI/180}
+      const R=6371; // km
+      const dLat=toRad(lat2-lat1); const dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
+      const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+      return R*c;
+    }
+
+    // ---------- Doctors list ----------
+    function renderDoctors(){
+      const el = document.getElementById('doctors-list');
+      el.innerHTML = sampleDoctors.map(d=>{
+        const h = sampleHospitals.find(x=>x.id===d.hospitalId) || {name:'Unknown'};
+        return `<div class=\"item\"><strong>${d.name}</strong><div class=\"small muted\">${d.specialty} — ${h.name}</div></div>`;
+      }).join('');
+    }
+
+    // ---------- Init ----------
+    (function(){
+      openAuth('consumer');
+      renderDoctors();
+      initMap();
+      // restore session if any
+      const s = localStorage.getItem('session');
+      if(s){currentUser = JSON.parse(s); openAuth(currentUser.role); renderAfterLogin();}
+      renderAppointments();
+    })();
+
+  </script>
+</body>
+</html>
